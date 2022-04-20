@@ -14,13 +14,18 @@ import org.springframework.stereotype.Service;
 import de.sf666.bayrol.api.BayrolHttpConnector;
 import de.sf666.bayrol.domain.BayrolMainDisplayValues;
 
-@Service
 public class BayrolBridge
 {
     private static final Logger log = LoggerFactory.getLogger(BayrolBridge.class.getName());
 
-    @Autowired
     private BayrolHttpConnector bayrol = null;
+
+    @Autowired
+    public BayrolBridge(BayrolHttpConnector bayrol)
+    {
+        this.bayrol = bayrol;
+        init();
+    }
 
     @Scheduled(fixedRate = 120000)
     private void doIt()
@@ -28,7 +33,6 @@ public class BayrolBridge
         bayrol.updateAllStates();
     }
 
-    @PostConstruct
     private void init()
     {
         try

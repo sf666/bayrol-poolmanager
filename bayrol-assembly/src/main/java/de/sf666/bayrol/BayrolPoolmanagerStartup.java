@@ -5,6 +5,7 @@ import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Options;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ConfigurableApplicationContext;
@@ -12,6 +13,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 import de.sf666.bayrol.api.BayrolHttpConnector;
+import de.sf666.bayrol.bridge.BayrolBridge;
 import de.sf666.bayrol.bridge.BayrolConfig;
 
 @SpringBootApplication(scanBasePackages = "de.sf666.bayrol")
@@ -79,6 +81,13 @@ public class BayrolPoolmanagerStartup
     public BayrolConfig createBayrolConfig()
     {
         return config;
+    }
+
+    @Autowired
+    @Bean
+    BayrolBridge createBridge(BayrolHttpConnector bayrol)
+    {
+        return new BayrolBridge(bayrol);
     }
 
     @Bean
