@@ -10,7 +10,7 @@
 	<artifactId>bayrol-assembly</artifactId>
 
 	<build>
-		<finalName>nextcp2</finalName>
+		<finalName>bayrolBridge</finalName>
 		<plugins>
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
