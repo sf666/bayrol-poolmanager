@@ -5,9 +5,11 @@ import java.io.UnsupportedEncodingException;
 import java.text.NumberFormat;
 import java.text.ParseException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -39,13 +41,13 @@ public class BayrolHttpConnector
     private static final String DATA_PATH = "/webview/getdata.php?cid=";
 
     private static final Pattern cidPattern = Pattern.compile("<a href=\\\"plant_settings\\.php\\?c=([0-9]+)", Pattern.DOTALL);
-    private static final Pattern dataPattern = Pattern.compile("\\[pH\\].*?<h1>(\\d+\\.\\d+)</h1></div>.*?\\[mg/l\\].*?<h1>(\\d+\\.\\d+).*C].*<h1>(\\d+\\.\\d+)");
+    private static final Pattern dataPattern = Pattern.compile("\\[pH\\].*?<h1>(\\d+\\.\\d+)</h1></div>.*?\\[mg/l\\].*?<h1>(\\d+\\.\\d+).*C].*<h1>(\\d+\\.\\d+)", Pattern.DOTALL);
 
     private String username = "";
     private String password = "";
 
     private Set<String> cids = new HashSet<>();
-    private BayrolMainDisplayValues currentState = new BayrolMainDisplayValues();
+    private Map<String, BayrolMainDisplayValues> currentStates = new HashMap<>();
 
     private OkHttpClient okClient = null;
 
@@ -106,9 +108,8 @@ public class BayrolHttpConnector
         Request request = new Request.Builder().url(BASE_URL + BASE_PATH + LOGIN_URI).build();
 
         Call call = okClient.newCall(request);
-        try
+        try (Response response = call.execute())
         {
-            Response response = call.execute();
             log.info("Getting session ID. return code should be 200. Actual value : " + response.code());
 
             printHeaders(response);
@@ -119,14 +120,26 @@ public class BayrolHttpConnector
         }
     }
 
-    public void updateState(String cid) throws UnsupportedEncodingException
+    public BayrolMainDisplayValues getCurrentState(String cid)
+    {
+        return currentStates.get(cid);
+    }
+
+    public void updateAllStates()
+    {
+        for (String cid : cids)
+        {
+            updateAndGetState(cid);
+        }
+    }
+
+    public BayrolMainDisplayValues updateAndGetState(String cid)
     {
         Request request = new Request.Builder().url(BASE_URL + DATA_PATH + cid).build();
 
         Call call = okClient.newCall(request);
-        try
+        try (Response response = call.execute())
         {
-            Response response = call.execute();
 
             if (response.code() != 200)
             {
@@ -138,10 +151,13 @@ public class BayrolHttpConnector
             Matcher m = dataPattern.matcher(resp);
             if (m.find())
             {
+                BayrolMainDisplayValues currentState = getCurrentStateForCid(cid);
                 currentState.ph = parseAsDouble(m.group(1));
                 currentState.cl = parseAsDouble(m.group(2));
                 currentState.temp = parseAsDouble(m.group(3));
                 log.debug(currentState.toString());
+                currentStates.put(cid, currentState);
+                return currentState;
             }
             else
             {
@@ -149,10 +165,22 @@ public class BayrolHttpConnector
                 log.error(resp);
             }
         }
-        catch (IOException e)
+        catch (Exception e)
         {
             log.error("getData error", e);
         }
+        throw new RuntimeException("current state not retrievable");
+    }
+
+    private BayrolMainDisplayValues getCurrentStateForCid(String cid)
+    {
+        BayrolMainDisplayValues currentState = currentStates.get(cid);
+        if (currentState == null)
+        {
+            currentState = new BayrolMainDisplayValues();
+            currentStates.put(cid, currentState);
+        }
+        return currentState;
     }
 
     private double parseAsDouble(String group)
@@ -177,9 +205,8 @@ public class BayrolHttpConnector
         Request request = new Request.Builder().url(BASE_URL + BASE_PATH + LOGIN_URI).post(formBody).build();
 
         Call call = okClient.newCall(request);
-        try
+        try (Response response = call.execute())
         {
-            Response response = call.execute();
             printHeaders(response);
         }
         catch (IOException e)
@@ -235,14 +262,21 @@ public class BayrolHttpConnector
         return cids;
     }
 
+    /**
+     * Howto use as a lib ...
+     * 
+     * @param args
+     * @throws UnsupportedEncodingException
+     */
     public static void main(String[] args) throws UnsupportedEncodingException
     {
+        // args : Username - Password
         BayrolHttpConnector c = new BayrolHttpConnector(args[0], args[1]);
         c.connectToWebPortal();
         Optional<String> cid = c.getPlantCids().stream().findAny();
         if (cid.isPresent())
         {
-            c.updateState(cid.get());
+            c.updateAndGetState(cid.get());
         }
         else
         {
