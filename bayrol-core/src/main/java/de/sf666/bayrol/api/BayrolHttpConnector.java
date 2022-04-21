@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.text.NumberFormat;
 import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -12,6 +14,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -43,6 +46,8 @@ public class BayrolHttpConnector
     private static final Pattern cidPattern = Pattern.compile("<a href=\\\"plant_settings\\.php\\?c=([0-9]+)", Pattern.DOTALL);
     private static final Pattern dataPattern = Pattern.compile("\\[pH\\].*?<h1>(\\d+\\.\\d+)</h1></div>.*?\\[mg/l\\].*?<h1>(\\d+\\.\\d+).*C].*<h1>(\\d+\\.\\d+)", Pattern.DOTALL);
 
+    private SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
+
     private String username = "";
     private String password = "";
 
@@ -51,13 +56,16 @@ public class BayrolHttpConnector
 
     private OkHttpClient okClient = null;
 
+    private int errorCount = 0;
+    private boolean loginSuccess = false;
+    private volatile boolean reconnectRunning = false;
+
     public BayrolHttpConnector(String username, String password)
     {
         this.username = username;
         this.password = password;
 
         initOkClient();
-
     }
 
     private void initOkClient()
@@ -103,14 +111,17 @@ public class BayrolHttpConnector
         }).build();
     }
 
-    public void getSessionID() throws UnsupportedEncodingException
+    public void getSessionID()
     {
         Request request = new Request.Builder().url(BASE_URL + BASE_PATH + LOGIN_URI).build();
 
         Call call = okClient.newCall(request);
         try (Response response = call.execute())
         {
-            log.info("Getting session ID. return code should be 200. Actual value : " + response.code());
+            if (response.header("PHPSESSID") != null)
+            {
+                log.info("Getting session ID : " + response.header("PHPSESSID"));
+            }
 
             printHeaders(response);
         }
@@ -152,10 +163,11 @@ public class BayrolHttpConnector
             if (m.find())
             {
                 BayrolMainDisplayValues currentState = getCurrentStateForCid(cid);
+                currentState.date = getCurrentIsoDate();
                 currentState.ph = parseAsDouble(m.group(1));
                 currentState.cl = parseAsDouble(m.group(2));
                 currentState.temp = parseAsDouble(m.group(3));
-                log.debug(currentState.toString());
+                log.info(currentState.toString());
                 currentStates.put(cid, currentState);
                 return currentState;
             }
@@ -163,13 +175,64 @@ public class BayrolHttpConnector
             {
                 log.error("unable to parse data from repsonse. " + resp);
                 log.error(resp);
+                reconnectAfterFailure();
             }
         }
         catch (Exception e)
         {
             log.error("getData error", e);
+            reconnectAfterFailure();
         }
         throw new RuntimeException("current state not retrievable");
+    }
+
+    private void reconnectAfterFailure()
+    {
+        if (!reconnectRunning)
+        {
+            reconnectRunning = true;
+            Runnable recon = new Runnable()
+            {
+                @Override
+                public void run()
+                {
+                    errorCount++;
+                    loginSuccess = false;
+                    while (!loginSuccess)
+                    {
+                        try
+                        {
+                            log.warn("reconnect attempt " + errorCount);
+                            connectToWebPortal();
+                            log.warn("try to reconnect again in 5 Minutes");
+                            Thread.sleep(1000 * 60 * 5);
+                        }
+                        catch (Exception e)
+                        {
+                            log.error("failed with ", e);
+                        }
+                    }
+
+                    log.warn("successfully reconnected.");
+                    errorCount = 0;
+                    reconnectRunning = false;
+                }
+            };
+            Thread reconThread = new Thread(recon, "Reconnection to web-portal");
+            reconThread.start();
+        }
+        else
+        {
+            log.debug("reconnect already running.");
+        }
+    }
+
+    private String getCurrentIsoDate()
+    {
+        // Input
+        Date date = new Date(System.currentTimeMillis());
+        sdf.setTimeZone(TimeZone.getTimeZone("CET"));
+        return sdf.format(date);
     }
 
     private BayrolMainDisplayValues getCurrentStateForCid(String cid)
@@ -198,7 +261,7 @@ public class BayrolHttpConnector
         }
     }
 
-    public void login() throws UnsupportedEncodingException
+    public void login()
     {
         RequestBody formBody = new FormBody.Builder().add("username", username).add("password", password).add("login", "Anmelden").build();
 
@@ -207,6 +270,14 @@ public class BayrolHttpConnector
         Call call = okClient.newCall(request);
         try (Response response = call.execute())
         {
+            if (response.message().equalsIgnoreCase("found"))
+            {
+                loginSuccess = true;
+            }
+            else
+            {
+                loginSuccess = false;
+            }
             printHeaders(response);
         }
         catch (IOException e)
@@ -217,11 +288,11 @@ public class BayrolHttpConnector
 
     private void printHeaders(Response response)
     {
-        if (log.isDebugEnabled())
+        if (log.isInfoEnabled())
         {
             for (Pair<? extends String, ? extends String> header : response.headers())
             {
-                log.debug(header.component1() + " : " + header.component2());
+                log.info(header.component1() + " : " + header.component2());
             }
         }
     }
@@ -249,7 +320,7 @@ public class BayrolHttpConnector
         return plants;
     }
 
-    public void connectToWebPortal() throws UnsupportedEncodingException
+    public void connectToWebPortal()
     {
         cids.clear();
         getSessionID();

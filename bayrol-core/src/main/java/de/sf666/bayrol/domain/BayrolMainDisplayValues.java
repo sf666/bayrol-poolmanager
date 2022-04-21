@@ -5,6 +5,7 @@ package de.sf666.bayrol.domain;
  */
 public class BayrolMainDisplayValues
 {
+    public String date = "";
     public double ph = 0;
     public double temp = 0;
     public double cl = 0;
@@ -12,7 +13,7 @@ public class BayrolMainDisplayValues
     @Override
     public String toString()
     {
-        return "BayrolMainDisplayValues [ph=" + ph + ", temp=" + temp + ", cl=" + cl + "]";
+        return "BayrolMainDisplayValues [date=" + date + ", ph=" + ph + ", temp=" + temp + ", cl=" + cl + "]";
     }
 
 }
