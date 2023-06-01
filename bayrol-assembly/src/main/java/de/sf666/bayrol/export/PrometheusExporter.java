@@ -12,7 +12,7 @@ public class PrometheusExporter implements IMetricExporter
     private static final String temp = "TEMP";
     private static final String cl = "CL";
     private static final String ph = "PH";
-    private static final String nl = "\r\n";
+    private static final String nl = "\n";
 
     public PrometheusExporter()
     {
