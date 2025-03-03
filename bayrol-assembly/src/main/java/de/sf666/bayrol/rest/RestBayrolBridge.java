@@ -1,15 +1,17 @@
 package de.sf666.bayrol.rest;
 
 import java.util.Set;
-
+import org.eclipse.jetty.util.StringUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
 import de.sf666.bayrol.bridge.BayrolBridge;
 import de.sf666.bayrol.domain.BayrolMainDisplayValues;
 import de.sf666.bayrol.export.ExportFactory;
@@ -19,20 +21,35 @@ import de.sf666.bayrol.export.ExportFactory;
 @RequestMapping("/Bayrol")
 public class RestBayrolBridge {
 
+	private static final Logger log = LoggerFactory.getLogger(RestBayrolBridge.class.getName());
+
 	@Autowired
 	private BayrolBridge bayrolBridge = null;
 
 	@Autowired
 	private ExportFactory exportFactory = null;
 
-	@GetMapping("/lightOn/{cid}")
-	public void lightOn(@PathVariable("cid") String cid) {
-		bayrolBridge.lightOn(cid);
+	@GetMapping("/light/{cid}")
+	public String lightStatus(@PathVariable("cid") String cid) {
+		// TODO
+		return "0";
 	}
 
-	@GetMapping("/lightOff/{cid}")
-	public void lightOff(@PathVariable("cid") String cid) {
-		bayrolBridge.lightOff(cid);
+	@GetMapping("/setLight/{cid}/{on}")
+	public void lightOff(@PathVariable("cid") String cid, @PathVariable("on") String on) {
+		if (StringUtil.isBlank(cid)) {
+			log.debug("pool plantid shall not be empty");
+			return;
+		}
+		if ("1".equals(on)) {
+			log.debug("light on");
+			bayrolBridge.lightOn(cid);
+		} else if ("0".equals(on)) {
+			log.debug("light off");
+			bayrolBridge.lightOff(cid);
+		} else {
+			log.debug("unknown light status");
+		}
 	}
 
 	/**

@@ -41,6 +41,7 @@ public class BayrolHttpConnector {
 	private static final String PLANTS_URI = "/plants.php";
 	private static final String DATA_PATH = "/webview/getdata.php?cid=";
 	private static final String WEBGUI_PATH = "/cgi-bin/webgui.fcgi?sid=";
+	private static final String LIGHT_STATUS_PAYLOAD = "{\"get\" :[\"60.5433.value\"]}";
 	private static final String LIGHT_ON_PAYLOAD = "{\"get\" :[\"60.5433.value\"],\"set\" :{\"60.5433.value\" :\"1\" }}";
 	private static final String LIGHT_OFF_PAYLOAD = "{\"get\" :[\"60.5433.value\"],\"set\" :{\"60.5433.value\" :\"4\" }}";
 	private static final String WEB_VIEW_PATH = "/webview/pm5/?c=";
