@@ -6,7 +6,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -36,19 +35,23 @@ public class RestBayrolBridge {
 	}
 
 	@GetMapping("/setLight/{cid}/{on}")
-	public void lightOff(@PathVariable("cid") String cid, @PathVariable("on") String on) {
+	public String lightOff(@PathVariable("cid") String cid, @PathVariable("on") String on) {
 		if (StringUtil.isBlank(cid)) {
-			log.debug("pool plantid shall not be empty");
-			return;
+			log.warn("pool plantid shall not be empty");
+			return "no pool id set";
 		}
 		if ("1".equals(on)) {
-			log.debug("light on");
+			log.info("light on");
 			bayrolBridge.lightOn(cid);
+			return "on";
+			
 		} else if ("0".equals(on)) {
-			log.debug("light off");
+			log.info("light off");
 			bayrolBridge.lightOff(cid);
+			return "off";
 		} else {
-			log.debug("unknown light status");
+			log.warn("unknown light status");
+			return "unknown state " + on != null ? on : "null";
 		}
 	}
 
