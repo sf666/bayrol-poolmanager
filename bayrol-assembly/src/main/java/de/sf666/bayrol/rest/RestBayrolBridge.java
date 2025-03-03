@@ -17,70 +17,73 @@ import de.sf666.bayrol.export.ExportFactory;
 @CrossOrigin(origins = "http://localhost:4200", maxAge = 3600)
 @RestController
 @RequestMapping("/Bayrol")
-public class RestBayrolBridge
-{
-    @Autowired
-    private BayrolBridge bayrolBridge = null;
+public class RestBayrolBridge {
 
-    @Autowired
-    private ExportFactory exportFactory = null;
+	@Autowired
+	private BayrolBridge bayrolBridge = null;
 
-    /**
-     * Deliver cached data
-     * 
-     * @param cid
-     * @return
-     */
-    @GetMapping("/currentState/{cid}")
-    public BayrolMainDisplayValues getCurrentState(@PathVariable("cid") String cid)
-    {
-        return bayrolBridge.getCurrentState(cid);
-    }
+	@Autowired
+	private ExportFactory exportFactory = null;
 
-    /**
-     * Deliver cached data
-     * 
-     * @param cid
-     * @param resturn
-     *            format
-     * @return
-     */
-    @GetMapping(value = "/currentState/{cid}/{format}", produces = MediaType.TEXT_PLAIN_VALUE)
-    public String getCurrentState(@PathVariable("cid") String cid, @PathVariable("format") String format)
-    {
-        return exportFactory.lookupExporter(format).formatMetrics(bayrolBridge.getCurrentState(cid), cid);
-    }
+	@GetMapping("/lightOn/{cid}")
+	public void lightOn(@PathVariable("cid") String cid) {
+		bayrolBridge.lightOn(cid);
+	}
 
-    @GetMapping("/getPlantIds")
-    public Set<String> getPlantIds()
-    {
-        return bayrolBridge.getPlantCids();
-    }
+	@GetMapping("/lightOff/{cid}")
+	public void lightOff(@PathVariable("cid") String cid) {
+		bayrolBridge.lightOff(cid);
+	}
 
-    /**
-     * Deliver live data
-     * 
-     * @param cid
-     * @return
-     */
-    @GetMapping("/currentLiveState/{cid}")
-    public BayrolMainDisplayValues getCurrentLiveState(@PathVariable("cid") String cid)
-    {
-        return bayrolBridge.updateAndGetState(cid);
-    }
+	/**
+	 * Deliver cached data
+	 * 
+	 * @param cid
+	 * @return
+	 */
+	@GetMapping("/currentState/{cid}")
+	public BayrolMainDisplayValues getCurrentState(@PathVariable("cid") String cid) {
+		return bayrolBridge.getCurrentState(cid);
+	}
 
-    /**
-     * Deliver live data
-     * 
-     * @param cid
-     * @param resturn
-     *            format
-     * @return
-     */
-    @GetMapping(value = "/currentLiveState/{cid}/{format}", produces = MediaType.TEXT_PLAIN_VALUE)
-    public String getCurrentLiveState(@PathVariable("cid") String cid, @PathVariable("format") String format)
-    {
-        return exportFactory.lookupExporter(format).formatMetrics(bayrolBridge.updateAndGetState(cid), cid);
-    }
+	/**
+	 * Deliver cached data
+	 * 
+	 * @param cid
+	 * @param resturn format
+	 * @return
+	 */
+	@GetMapping(value = "/currentState/{cid}/{format}", produces = MediaType.TEXT_PLAIN_VALUE)
+	public String getCurrentState(@PathVariable("cid") String cid, @PathVariable("format") String format) {
+		return exportFactory.lookupExporter(format).formatMetrics(bayrolBridge.getCurrentState(cid), cid);
+	}
+
+	@GetMapping("/getPlantIds")
+	public Set<String> getPlantIds() {
+		return bayrolBridge.getPlantCids();
+	}
+
+	/**
+	 * Deliver live data
+	 * 
+	 * @param cid
+	 * @return
+	 */
+	@GetMapping("/currentLiveState/{cid}")
+	public BayrolMainDisplayValues getCurrentLiveState(@PathVariable("cid") String cid) {
+		return bayrolBridge.updateAndGetState(cid);
+	}
+
+	/**
+	 * Deliver live data
+	 * 
+	 * @param cid
+	 * @param resturn format
+	 * @return
+	 */
+	@GetMapping(value = "/currentLiveState/{cid}/{format}", produces = MediaType.TEXT_PLAIN_VALUE)
+	public String getCurrentLiveState(@PathVariable("cid") String cid, @PathVariable("format") String format) {
+		return exportFactory.lookupExporter(format).formatMetrics(bayrolBridge.updateAndGetState(cid), cid);
+	}
 
 }

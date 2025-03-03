@@ -69,4 +69,12 @@ public class BayrolBridge
     {
         return bayrol.getPlantCids();
     }
+    
+    public void lightOn(String cid) {
+    	bayrol.lightOn(cid);
+    }
+
+    public void lightOff(String cid) {
+    	bayrol.lightOff(cid);
+    }
 }
