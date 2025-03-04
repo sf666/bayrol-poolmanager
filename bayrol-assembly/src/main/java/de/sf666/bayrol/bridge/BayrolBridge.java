@@ -79,4 +79,8 @@ public class BayrolBridge
     public void lightOff(String cid) {
     	bayrol.lightOff(cid);
     }
+
+	public String readLightState(String cid) {
+		return bayrol.readLightState(cid);
+	}
 }

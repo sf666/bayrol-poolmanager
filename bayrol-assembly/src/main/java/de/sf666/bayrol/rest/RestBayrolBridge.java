@@ -30,7 +30,13 @@ public class RestBayrolBridge {
 
 	@GetMapping("/light/{cid}")
 	public String lightStatus(@PathVariable("cid") String cid) {
-		// TODO
+		String state = bayrolBridge.readLightState(cid);
+		if ("4".equals(state)) {
+			return "0";
+		} else if ("1".equals(state)) {
+			return "1";
+		}
+		log.debug("only ON and OFF is supported on this interface. Retruning OFF for state : " + state);
 		return "0";
 	}
 

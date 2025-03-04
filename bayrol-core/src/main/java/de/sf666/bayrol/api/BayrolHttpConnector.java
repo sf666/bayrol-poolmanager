@@ -46,6 +46,7 @@ public class BayrolHttpConnector {
 	private static final String LIGHT_OFF_PAYLOAD = "{\"get\" :[\"60.5433.value\"],\"set\" :{\"60.5433.value\" :\"4\" }}";
 	private static final String WEB_VIEW_PATH = "/webview/pm5/?c=";
 
+	private static final Pattern lightStatePattern = Pattern.compile(".*60\\.5433\\.value\"\\s*:\\s*\"(.)", Pattern.DOTALL);
 	private static final Pattern cidPattern = Pattern.compile("<a href=\\\"plant_settings\\.php\\?c=([0-9]+)", Pattern.DOTALL);
 	private static final Pattern sidPattern = Pattern.compile(".*init\\('(\\w*)'", Pattern.DOTALL);
 	private static final Pattern cgiUserPass = Pattern.compile(".*17401\\.user\" value=\"(\\w*).*17401.pass\" value=\"(\\w*)",
@@ -130,7 +131,7 @@ public class BayrolHttpConnector {
 		return null;
 	}
 
-	public String readLightData(String plantId) {
+	public String readLightState(String plantId) {
 		String readLightStateData = "{\"get\" :[\"60.5433.value\"]}";
 		RequestBody body = RequestBody.create(readLightStateData, MediaType.parse("application/json"));
 		String u = BASE_URL + WEBGUI_PATH + plantIdSidMap.get(plantId);
@@ -140,7 +141,13 @@ public class BayrolHttpConnector {
 		try (Response response = call.execute()) {
 			String b = response.body().string();
 			log.debug(b);
-			return b;
+			
+			Matcher m = lightStatePattern.matcher(b);
+			if (m.find()) {
+				String state = m.group(1);
+				log.debug("Light State : " + state);
+				return state;
+			}
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
@@ -167,7 +174,6 @@ public class BayrolHttpConnector {
 
 	public void lightOn(String plantId) {
 		// get sid from cid
-		readLightData(plantId);
 		RequestBody body = RequestBody.create(LIGHT_ON_PAYLOAD, MediaType.parse("application/json"));
 		String u = BASE_URL + WEBGUI_PATH + plantIdSidMap.get(plantId);
 		Request request = new Request.Builder().url(u).post(body).build();
