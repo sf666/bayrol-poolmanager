@@ -30,6 +30,7 @@ public class BayrolBridge
     @Scheduled(fixedRate = 120000)
     private void doIt()
     {
+        log.debug("Starting scheduled state update for {} discovered pools", bayrol.getPlantCids().size());
         bayrol.updateAllStates();
     }
 
@@ -37,7 +38,9 @@ public class BayrolBridge
     {
         try
         {
+            log.info("Connecting to Bayrol web portal");
             bayrol.connectToWebPortal();
+            log.info("Bayrol web portal connection established; discovered {} pools", bayrol.getPlantCids().size());
         }
         catch (Exception e)
         {

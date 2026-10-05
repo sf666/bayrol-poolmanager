@@ -19,7 +19,6 @@ import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import de.sf666.bayrol.domain.BayrolMainDisplayValues;
-import kotlin.Pair;
 import okhttp3.Call;
 import okhttp3.Cookie;
 import okhttp3.CookieJar;
@@ -100,11 +99,7 @@ public class BayrolHttpConnector {
 
 			@Override
 			public List<Cookie> loadForRequest(HttpUrl url) {
-				log.debug("request cookies");
-				for (Cookie cookie : c) {
-					log.debug(cookie.toString());
-				}
-
+				log.debug("Sending {} stored cookies to {}", c.size(), url.host());
 				return c;
 			}
 		}).build();
@@ -117,16 +112,18 @@ public class BayrolHttpConnector {
 		Call call = okClient.newCall(request);
 		try (Response response = call.execute()) {
 			String b = response.body().string();
-			log.debug(b);
 			Matcher m = cgiUserPass.matcher(b);
 			UserPass up = new UserPass();
 			if (m.find()) {
 				up.user = m.group(1);
 				up.pass = m.group(2);
+				log.debug("Retrieved CGI credentials for pool {}", plantId);
+			} else {
+				log.warn("Could not retrieve CGI credentials for pool {} from HTTP {} response of {} bytes", plantId, response.code(), b.length());
 			}
 			return up;
 		} catch (IOException e) {
-			e.printStackTrace();
+			log.error("Unable to initialize CGI session for pool {}", plantId, e);
 		}
 		return null;
 	}
@@ -139,7 +136,6 @@ public class BayrolHttpConnector {
 		Call call = okClient.newCall(request);
 		try (Response response = call.execute()) {
 			String b = response.body().string();
-			log.debug(b);
 
 			Matcher m = lightStatePattern.matcher(b);
 			if (m.find()) {
@@ -148,7 +144,7 @@ public class BayrolHttpConnector {
 				return state;
 			}
 		} catch (IOException e) {
-			e.printStackTrace();
+			log.error("Unable to read light state for pool {}", plantId, e);
 		}
 		return "";
 	}
@@ -163,10 +159,10 @@ public class BayrolHttpConnector {
 		Call call = okClient.newCall(request);
 		try (Response response = call.execute()) {
 			String b = response.body().string();
-			log.debug("loginWebguiCgi", b);
+			log.debug("CGI login for pool {} returned HTTP {} with {} bytes", plantId, response.code(), b.length());
 			return b;
 		} catch (IOException e) {
-			e.printStackTrace();
+			log.error("Unable to log in to CGI for pool {}", plantId, e);
 		}
 		return "";
 	}
@@ -212,7 +208,7 @@ public class BayrolHttpConnector {
 		try (Response response = call.execute()) {
 			if (response.header("set-cookie") != null) {
 				sid = response.header("set-cookie").substring("PHPSESSID=".length());
-				log.info("Getting session ID : " + sid);
+				log.debug("Received webview session cookie");
 			}
 
 			printHeaders(response);
@@ -230,7 +226,7 @@ public class BayrolHttpConnector {
 		try (Response response = call.execute()) {
 			if (response.header("set-cookie") != null) {
 				sid = response.header("set-cookie").substring("PHPSESSID=".length());
-				log.info("Getting session ID : " + sid);
+				log.debug("Received portal session cookie");
 			}
 
 			printHeaders(response);
@@ -245,12 +241,20 @@ public class BayrolHttpConnector {
 	}
 
 	public void updateAllStates() {
+		if (plantIdSidMap.isEmpty()) {
+			log.warn("Skipping state update because no pools are currently discovered");
+			return;
+		}
 		for (String cid : plantIdSidMap.keySet()) {
 			updateAndGetState(cid);
 		}
 	}
 
 	public BayrolMainDisplayValues updateAndGetState(String cid) {
+		if (!plantIdSidMap.containsKey(cid)) {
+			log.warn("Cannot update state for pool {} because it is not in the discovered pool list", cid);
+			throw new IllegalStateException("Pool is not discovered");
+		}
 		RequestBody body = RequestBody.create(TEMP_CL_PH_PAYLOAD, MediaType.parse("application/json"));
 		String u = getFastCgiPath(cid);
 		Request request = new Request.Builder().url(u).post(body).build();
@@ -258,7 +262,7 @@ public class BayrolHttpConnector {
 		try (Response response = call.execute()) {
 
 			if (response.code() != 200) {
-				log.warn("retuned code is " + response.code());
+				log.warn("State update for pool {} returned HTTP {}", cid, response.code());
 			}
 
 			String resp = response.body().string();
@@ -270,16 +274,15 @@ public class BayrolHttpConnector {
 				currentState.ph = parseAsDouble(m.group(1));
 				currentState.cl = parseAsDouble(m.group(2));
 				currentState.temp = parseAsDouble(m.group(3));
-				log.info(currentState.toString());
+				log.info("Updated state for pool {}: temperature={}, chlorine={}, pH={}", cid, currentState.temp, currentState.cl, currentState.ph);
 				currentStates.put(cid, currentState);
 				return currentState;
 			} else {
-				log.error("unable to parse data from repsonse. " + resp);
-				log.error(resp);
+				log.error("Unable to parse state response for pool {} (HTTP {}, {} bytes)", cid, response.code(), resp.length());
 				reconnectAfterFailure();
 			}
 		} catch (Exception e) {
-			log.error("getData error", e);
+			log.error("Unable to update state for pool {}", cid, e);
 			reconnectAfterFailure();
 		}
 		throw new RuntimeException("current state not retrievable");
@@ -356,6 +359,7 @@ public class BayrolHttpConnector {
 			} else {
 				loginSuccess = false;
 			}
+			log.info("Portal login returned HTTP {} (successful: {})", response.code(), loginSuccess);
 			printHeaders(response);
 		} catch (IOException e) {
 			log.error("login error", e);
@@ -363,28 +367,29 @@ public class BayrolHttpConnector {
 	}
 
 	private void printHeaders(Response response) {
-		if (log.isInfoEnabled()) {
-			for (Pair<? extends String, ? extends String> header : response.headers()) {
-				log.info(header.component1() + " : " + header.component2());
-			}
-		}
+		log.debug("Portal response: HTTP {} {}", response.code(), response.message());
 	}
 
 	public void scanForPlantIds() {
 		Request request = new Request.Builder().url(BASE_URL + BASE_PATH + PLANTS_URI).build();
 		try (Response response = okClient.newCall(request).execute()) {
 			String resp = response.body().string();
+			if (!response.isSuccessful()) {
+				log.warn("Pool discovery returned HTTP {} with {} bytes", response.code(), resp.length());
+			}
 
 			Matcher m = cidPattern.matcher(resp);
+			int discoveredPoolCount = 0;
 			while (m.find()) {
 				String cid = m.group(1);
 				log.debug("found cid : " + cid);
 				String sid = getSidForPlantId(cid);
 				plantIdSidMap.put(cid, sid);
-
+				discoveredPoolCount++;
 			}
+			log.info("Pool discovery completed: {} pools found (HTTP {}, {} bytes)", discoveredPoolCount, response.code(), resp.length());
 		} catch (IOException e) {
-			log.error("getPlantIDs error", e);
+			log.error("Unable to discover pools", e);
 		}
 	}
 
@@ -399,6 +404,10 @@ public class BayrolHttpConnector {
 	private void loginCgiAllPlanIt() {
 		for (String plantId : plantIdSidMap.keySet()) {
 			UserPass up = initCgiSession(plantId);
+			if (up == null || up.user == null || up.pass == null) {
+				log.warn("Skipping CGI login for pool {} because no CGI credentials were retrieved", plantId);
+				continue;
+			}
 			loginWebguiCgi(plantId, up);
 		}
 	}

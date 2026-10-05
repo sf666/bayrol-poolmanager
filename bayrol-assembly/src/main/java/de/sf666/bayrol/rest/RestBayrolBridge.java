@@ -5,12 +5,14 @@ import org.eclipse.jetty.util.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import de.sf666.bayrol.bridge.BayrolBridge;
 import de.sf666.bayrol.domain.BayrolMainDisplayValues;
 import de.sf666.bayrol.export.ExportFactory;
@@ -69,7 +71,7 @@ public class RestBayrolBridge {
 	 */
 	@GetMapping("/currentState/{cid}")
 	public BayrolMainDisplayValues getCurrentState(@PathVariable("cid") String cid) {
-		return bayrolBridge.getCurrentState(cid);
+		return getCachedCurrentState(cid);
 	}
 
 	/**
@@ -81,7 +83,7 @@ public class RestBayrolBridge {
 	 */
 	@GetMapping(value = "/currentState/{cid}/{format}", produces = MediaType.TEXT_PLAIN_VALUE)
 	public String getCurrentState(@PathVariable("cid") String cid, @PathVariable("format") String format) {
-		return exportFactory.lookupExporter(format).formatMetrics(bayrolBridge.getCurrentState(cid), cid);
+		return exportFactory.lookupExporter(format).formatMetrics(getCachedCurrentState(cid), cid);
 	}
 
 	@GetMapping("/getPlantIds")
@@ -110,6 +112,15 @@ public class RestBayrolBridge {
 	@GetMapping(value = "/currentLiveState/{cid}/{format}", produces = MediaType.TEXT_PLAIN_VALUE)
 	public String getCurrentLiveState(@PathVariable("cid") String cid, @PathVariable("format") String format) {
 		return exportFactory.lookupExporter(format).formatMetrics(bayrolBridge.updateAndGetState(cid), cid);
+	}
+
+	private BayrolMainDisplayValues getCachedCurrentState(String cid) {
+		BayrolMainDisplayValues currentState = bayrolBridge.getCurrentState(cid);
+		if (currentState == null) {
+			log.warn("No cached current state available for pool {}. Discovered pool count: {}", cid, bayrolBridge.getPlantCids().size());
+			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Current pool state is not available");
+		}
+		return currentState;
 	}
 
 }
