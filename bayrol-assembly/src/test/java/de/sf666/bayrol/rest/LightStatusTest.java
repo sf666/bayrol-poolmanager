@@ -14,7 +14,7 @@ class LightStatusTest {
         BayrolBridge bridge = mock(BayrolBridge.class);
         RestBayrolBridge rest = new RestBayrolBridge();
         ReflectionTestUtils.setField(rest, "bayrolBridge", bridge);
-        when(bridge.readLightState("12799")).thenReturn("1", "4", "", "11");
+        when(bridge.readLightState("12799")).thenReturn("0", "1", "", "11");
         assertEquals("1", rest.lightStatus("12799"));
         assertEquals("0", rest.lightStatus("12799"));
         for (int i = 0; i < 2; i++) {

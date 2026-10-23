@@ -33,7 +33,7 @@ public class RestBayrolBridge {
 
 	@GetMapping("/light/{cid}")
 	public String lightStatus(@PathVariable("cid") String cid) {
-		BayrolLightState state = BayrolLightState.fromRaw(bayrolBridge.readLightState(cid));
+		BayrolLightState state = BayrolLightState.fromStatus(bayrolBridge.readLightState(cid));
 		if (state == BayrolLightState.UNKNOWN) {
 			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Light state is unknown");
 		}

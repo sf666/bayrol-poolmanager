@@ -39,15 +39,15 @@ public class BayrolHttpConnector {
 	private static final String LOGIN_URI = "/login.php?r=reg";
 	private static final String PLANTS_URI = "/plants.php";
 	private static final String WEBGUI_PATH = "/cgi-bin/webgui.fcgi?sid=";
-	private static final String LIGHT_STATUS_PAYLOAD = "{\"get\" :[\"60.5433.value\"]}";
-	private static final String TEMP_CL_PH_PAYLOAD = "{\"get\" :[\"34.4001.value\",\"34.4008.value\",\"34.4033.value\",\"60.5433.value\"]}";
+	private static final String LIGHT_STATUS_PAYLOAD = "{\"get\" :[\"55.17101.status\"]}";
+	private static final String TEMP_CL_PH_PAYLOAD = "{\"get\" :[\"34.4001.value\",\"34.4008.value\",\"34.4033.value\",\"55.17101.status\"]}";
 	private static final String LIGHT_ON_PAYLOAD = "{\"get\" :[\"60.5433.value\"],\"set\" :{\"60.5433.value\" :\"1\" }}";
 	private static final String LIGHT_OFF_PAYLOAD = "{\"get\" :[\"60.5433.value\"],\"set\" :{\"60.5433.value\" :\"4\" }}";
 	private static final String WEB_VIEW_PATH = "/webview/pm5/?c=";
 
 	
 	private static final Pattern tempClPhPattern = Pattern.compile(".*4001\\.value\"\\s*:\\s*\"([\\d\\.]*)\".*4008\\.value\"\\s*:\\s*\"([\\d\\.]*)\".*4033\\.value\"\\s*:\\s*\"([\\d\\.]*)\"", Pattern.DOTALL);
-	private static final Pattern lightStatePattern = Pattern.compile("\"60\\.5433\\.value\"\\s*:\\s*\"([^\"]*)\"");
+	private static final Pattern lightStatePattern = Pattern.compile("\"55\\.17101\\.status\"\\s*:\\s*(?:\"([^\"]*)\"|(-?\\d+))");
 	private static final Pattern cidPattern = Pattern.compile("<a href=\\\"plant_settings\\.php\\?c=([0-9]+)", Pattern.DOTALL);
 	private static final Pattern sidPattern = Pattern.compile(".*init\\('(\\w*)'", Pattern.DOTALL);
 	private static final Pattern cgiUserPass = Pattern.compile(".*17401\\.user\" value=\"(\\w*).*17401.pass\" value=\"(\\w*)",
@@ -148,7 +148,10 @@ public class BayrolHttpConnector {
 			return "";
 		}
 		Matcher matcher = lightStatePattern.matcher(response);
-		return matcher.find() ? matcher.group(1) : "";
+		if (!matcher.find()) {
+			return "";
+		}
+		return matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
 	}
 
 	public String loginWebguiCgi(String plantId, UserPass up) {

@@ -9,7 +9,7 @@ class PrometheusLightTest {
     void exportsLightWithoutTurningUnknownIntoOff() {
         BayrolMainDisplayValues values = new BayrolMainDisplayValues();
         PrometheusExporter exporter = new PrometheusExporter();
-        String[][] cases = {{"1", "1", "1"}, {"4", "0", "1"}, {"", "NaN", "0"}, {"11", "NaN", "0"}};
+        String[][] cases = {{"0", "1", "1"}, {"1", "0", "1"}, {"", "NaN", "0"}, {"11", "NaN", "0"}};
         for (String[] c : cases) {
             values.lightState = c[0];
             String metrics = exporter.formatMetrics(values, "12799");

@@ -57,9 +57,11 @@ BAYROL_POOL_PH{pool_id="POOL_ID"} 7.27
 
 ## Light state
 
-The measurement request also reads `60.5433.value`. JSON `lightState` preserves
-that complete raw mode: `1` means explicitly ON, `4` explicitly OFF. Other modes
-or a missing value are unknown; they are not treated as OFF. `date` is the time
+The measurement request also reads the actual home-screen light indicator
+`55.17101.status`. JSON `lightState` preserves that raw indicator: `0` means ON,
+`1` means OFF. Other indicator values or missing data are unknown, not OFF.
+The operating-mode register `60.5433.value` is a different value: it remains
+unchanged for the existing ON (`1`) and OFF (`4`) commands. `date` is the time
 of the successful measurement snapshot; `/currentState` can contain cached data.
 
 Prometheus adds:
