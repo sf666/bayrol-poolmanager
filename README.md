@@ -54,3 +54,26 @@ BAYROL_POOL_TEMP{pool_id="POOL_ID"} 34.3
 BAYROL_POOL_CL{pool_id="POOL_ID"} 0.6
 BAYROL_POOL_PH{pool_id="POOL_ID"} 7.27
 ```
+
+## Light state
+
+The measurement request also reads `60.5433.value`. JSON `lightState` preserves
+that complete raw mode: `1` means explicitly ON, `4` explicitly OFF. Other modes
+or a missing value are unknown; they are not treated as OFF. `date` is the time
+of the successful measurement snapshot; `/currentState` can contain cached data.
+
+Prometheus adds:
+
+```
+BAYROL_POOL_LIGHT{pool_id="POOL_ID"} 0
+BAYROL_POOL_LIGHT_KNOWN{pool_id="POOL_ID"} 1
+```
+
+`LIGHT` is `1` for ON, `0` for OFF, and `NaN` when unknown. `LIGHT_KNOWN` is then
+`1`, `1`, or `0`, respectively. A failed whole measurement request does not refresh
+the cached snapshot; consumers must also consider its age.
+
+`GET /Bayrol/light/POOLID` reads live and returns `1` or `0`; unavailable or
+unknown modes return HTTP 503. `GET /Bayrol/setLight/POOLID/1` and `/0` are explicit
+ON/OFF commands, not toggle impulses. A command response alone is not proof of
+the physical light state. Tests do not connect to the portal or actuate devices.

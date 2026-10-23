@@ -40,14 +40,14 @@ public class BayrolHttpConnector {
 	private static final String PLANTS_URI = "/plants.php";
 	private static final String WEBGUI_PATH = "/cgi-bin/webgui.fcgi?sid=";
 	private static final String LIGHT_STATUS_PAYLOAD = "{\"get\" :[\"60.5433.value\"]}";
-	private static final String TEMP_CL_PH_PAYLOAD = "{\"get\" :[\"34.4001.value\",\"34.4008.value\",\"34.4033.value\"]}";
+	private static final String TEMP_CL_PH_PAYLOAD = "{\"get\" :[\"34.4001.value\",\"34.4008.value\",\"34.4033.value\",\"60.5433.value\"]}";
 	private static final String LIGHT_ON_PAYLOAD = "{\"get\" :[\"60.5433.value\"],\"set\" :{\"60.5433.value\" :\"1\" }}";
 	private static final String LIGHT_OFF_PAYLOAD = "{\"get\" :[\"60.5433.value\"],\"set\" :{\"60.5433.value\" :\"4\" }}";
 	private static final String WEB_VIEW_PATH = "/webview/pm5/?c=";
 
 	
 	private static final Pattern tempClPhPattern = Pattern.compile(".*4001\\.value\"\\s*:\\s*\"([\\d\\.]*)\".*4008\\.value\"\\s*:\\s*\"([\\d\\.]*)\".*4033\\.value\"\\s*:\\s*\"([\\d\\.]*)\"", Pattern.DOTALL);
-	private static final Pattern lightStatePattern = Pattern.compile(".*60\\.5433\\.value\"\\s*:\\s*\"(.)", Pattern.DOTALL);
+	private static final Pattern lightStatePattern = Pattern.compile("\"60\\.5433\\.value\"\\s*:\\s*\"([^\"]*)\"");
 	private static final Pattern cidPattern = Pattern.compile("<a href=\\\"plant_settings\\.php\\?c=([0-9]+)", Pattern.DOTALL);
 	private static final Pattern sidPattern = Pattern.compile(".*init\\('(\\w*)'", Pattern.DOTALL);
 	private static final Pattern cgiUserPass = Pattern.compile(".*17401\\.user\" value=\"(\\w*).*17401.pass\" value=\"(\\w*)",
@@ -130,23 +130,25 @@ public class BayrolHttpConnector {
 
 	public String readLightState(String plantId) {
 		RequestBody body = RequestBody.create(LIGHT_STATUS_PAYLOAD, MediaType.parse("application/json"));
-		String u = getFastCgiPath(plantId);
-		Request request = new Request.Builder().url(u).post(body).build();
-
-		Call call = okClient.newCall(request);
-		try (Response response = call.execute()) {
-			String b = response.body().string();
-
-			Matcher m = lightStatePattern.matcher(b);
-			if (m.find()) {
-				String state = m.group(1);
-				log.debug("Light State : " + state);
-				return state;
+		Request request = new Request.Builder().url(getFastCgiPath(plantId)).post(body).build();
+		try (Response response = okClient.newCall(request).execute()) {
+			if (!response.isSuccessful() || response.body() == null) {
+				log.warn("Unable to read light state for pool {}: HTTP {}", plantId, response.code());
+				return "";
 			}
+			return extractLightState(response.body().string());
 		} catch (IOException e) {
 			log.error("Unable to read light state for pool {}", plantId, e);
 		}
 		return "";
+	}
+
+	static String extractLightState(String response) {
+		if (response == null) {
+			return "";
+		}
+		Matcher matcher = lightStatePattern.matcher(response);
+		return matcher.find() ? matcher.group(1) : "";
 	}
 
 	public String loginWebguiCgi(String plantId, UserPass up) {
@@ -261,19 +263,20 @@ public class BayrolHttpConnector {
 		Call call = okClient.newCall(request);
 		try (Response response = call.execute()) {
 
-			if (response.code() != 200) {
-				log.warn("State update for pool {} returned HTTP {}", cid, response.code());
+			if (!response.isSuccessful() || response.body() == null) {
+				throw new IOException("State update failed with HTTP " + response.code());
 			}
 
 			String resp = response.body().string();
 
 			Matcher m = tempClPhPattern.matcher(resp);
 			if (m.find()) {
-				BayrolMainDisplayValues currentState = getCurrentStateForCid(cid);
+				BayrolMainDisplayValues currentState = new BayrolMainDisplayValues();
 				currentState.date = getCurrentIsoDate();
 				currentState.ph = parseAsDouble(m.group(1));
 				currentState.cl = parseAsDouble(m.group(2));
 				currentState.temp = parseAsDouble(m.group(3));
+				currentState.lightState = extractLightState(resp);
 				log.info("Updated state for pool {}: temperature={}, chlorine={}, pH={}", cid, currentState.temp, currentState.cl, currentState.ph);
 				currentStates.put(cid, currentState);
 				return currentState;

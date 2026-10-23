@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import de.sf666.bayrol.bridge.BayrolBridge;
 import de.sf666.bayrol.domain.BayrolMainDisplayValues;
+import de.sf666.bayrol.domain.BayrolLightState;
 import de.sf666.bayrol.export.ExportFactory;
 
 @CrossOrigin(origins = "http://localhost:4200", maxAge = 3600)
@@ -32,14 +33,11 @@ public class RestBayrolBridge {
 
 	@GetMapping("/light/{cid}")
 	public String lightStatus(@PathVariable("cid") String cid) {
-		String state = bayrolBridge.readLightState(cid);
-		if ("4".equals(state)) {
-			return "0";
-		} else if ("1".equals(state)) {
-			return "1";
+		BayrolLightState state = BayrolLightState.fromRaw(bayrolBridge.readLightState(cid));
+		if (state == BayrolLightState.UNKNOWN) {
+			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Light state is unknown");
 		}
-		log.debug("only ON and OFF is supported on this interface. Retruning OFF for state : " + state);
-		return "0";
+		return state.metricValue();
 	}
 
 	@GetMapping("/setLight/{cid}/{on}")
