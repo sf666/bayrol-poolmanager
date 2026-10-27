@@ -16,7 +16,7 @@ java -jar bayrol-assembly/target/bayrolBridge.jar \
 ```
 
 The build runs unit tests for light and filter-pump status parsing, REST error
-handling, separate measurement/output requests, and Prometheus export. Tests do
+handling, repeatable live reads with portal delta handling, and Prometheus export. Tests do
 not connect to the portal or switch devices.
 
 | Option | Purpose | Default |
@@ -85,10 +85,12 @@ curl --fail http://localhost:32176/Bayrol/filterPump/POOLID
 ```
 
 `temp` is in °C; `cl` is in mg/l. `date` identifies the successful snapshot.
-Measurement values and output indicators are read in **separate portal
-requests**, because the portal omits output indicators when they are requested
-together with measurement registers. They therefore belong to the same polling
-cycle, but are not an atomic device sample.
+Measurement values and output indicators are read together after refreshing
+the read-only portal home page. BAYROL otherwise returns only changes within a
+page session, which can omit unchanged readings. Refreshing the read baseline
+makes repeated live requests complete without reusing an old indicator. Portal
+reads and light commands are serialized to keep concurrent requests from
+interfering with that baseline.
 
 JSON preserves the portal's raw indicator values:
 

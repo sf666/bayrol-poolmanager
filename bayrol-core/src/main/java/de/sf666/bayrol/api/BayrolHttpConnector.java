@@ -41,8 +41,7 @@ public class BayrolHttpConnector {
 	private static final String WEBGUI_PATH = "/cgi-bin/webgui.fcgi?sid=";
 	private static final String LIGHT_STATUS_PAYLOAD = "{\"get\" :[\"55.17101.status\"]}";
 	private static final String FILTER_PUMP_STATUS_PAYLOAD = "{\"get\" :[\"55.17106.status\"]}";
-	private static final String OUTPUT_STATUS_PAYLOAD = "{\"get\" :[\"55.17101.status\",\"55.17106.status\"]}";
-	private static final String TEMP_CL_PH_PAYLOAD = "{\"get\" :[\"34.4001.value\",\"34.4008.value\",\"34.4033.value\"]}";
+	private static final String TEMP_CL_PH_PAYLOAD = "{\"get\" :[\"34.4001.value\",\"34.4008.value\",\"34.4033.value\",\"55.17101.status\",\"55.17106.status\"]}";
 	private static final String LIGHT_ON_PAYLOAD = "{\"get\" :[\"60.5433.value\"],\"set\" :{\"60.5433.value\" :\"1\" }}";
 	private static final String LIGHT_OFF_PAYLOAD = "{\"get\" :[\"60.5433.value\"],\"set\" :{\"60.5433.value\" :\"4\" }}";
 	private static final String WEB_VIEW_PATH = "/webview/pm5/?c=";
@@ -131,11 +130,11 @@ public class BayrolHttpConnector {
 		return null;
 	}
 
-	public String readLightState(String plantId) {
+	public synchronized String readLightState(String plantId) {
         return extractLightState(readOutputStates(plantId, LIGHT_STATUS_PAYLOAD));
     }
 
-    public String readFilterPumpState(String plantId) {
+    public synchronized String readFilterPumpState(String plantId) {
         return extractFilterPumpState(readOutputStates(plantId, FILTER_PUMP_STATUS_PAYLOAD));
     }
 
@@ -143,18 +142,31 @@ public class BayrolHttpConnector {
         if (!plantIdSidMap.containsKey(plantId)) {
             return "";
         }
-        RequestBody body = RequestBody.create(payload, MediaType.parse("application/json"));
-        Request request = new Request.Builder().url(getFastCgiPath(plantId)).post(body).build();
-        try (Response response = okClient.newCall(request).execute()) {
-            if (!response.isSuccessful() || response.body() == null) {
-                log.warn("Unable to read output states for pool {}: HTTP {}", plantId, response.code());
-                return "";
-            }
-            return response.body().string();
+        try {
+            return readRegisters(plantId, payload);
         } catch (IOException e) {
             // Do not include a session-bearing request URL in logs.
             log.warn("Unable to read output states for pool {}", plantId);
             return "";
+        }
+    }
+
+    private synchronized String readRegisters(String plantId, String payload) throws IOException {
+        // The portal sends only changed values within a page session. Reload the
+        // read-only home page to reset that delta baseline before each live read.
+        Request home = new Request.Builder().url(getFastCgiPath(plantId) + "&cmd=3.16912.0").get().build();
+        try (Response response = okClient.newCall(home).execute()) {
+            if (!response.isSuccessful() || response.body() == null) {
+                throw new IOException("Cannot refresh portal home page");
+            }
+        }
+        RequestBody body = RequestBody.create(payload, MediaType.parse("application/json"));
+        Request request = new Request.Builder().url(getFastCgiPath(plantId)).post(body).build();
+        try (Response response = okClient.newCall(request).execute()) {
+            if (!response.isSuccessful() || response.body() == null) {
+                throw new IOException("Cannot read portal registers");
+            }
+            return response.body().string();
         }
     }
 
@@ -198,7 +210,7 @@ public class BayrolHttpConnector {
 		return "";
 	}
 
-	public void lightOn(String plantId) {
+	public synchronized void lightOn(String plantId) {
 		// get sid from cid
 		RequestBody body = RequestBody.create(LIGHT_ON_PAYLOAD, MediaType.parse("application/json"));
 		String u = getFastCgiPath(plantId);
@@ -217,7 +229,7 @@ public class BayrolHttpConnector {
 		return BASE_URL + WEBGUI_PATH + plantIdSidMap.get(plantId);
 	}
 
-	public void lightOff(String plantId) {
+	public synchronized void lightOff(String plantId) {
 		// get sid from cid
 
 		RequestBody body = RequestBody.create(LIGHT_OFF_PAYLOAD, MediaType.parse("application/json"));
@@ -281,22 +293,13 @@ public class BayrolHttpConnector {
 		}
 	}
 
-	public BayrolMainDisplayValues updateAndGetState(String cid) {
+	public synchronized BayrolMainDisplayValues updateAndGetState(String cid) {
 		if (!plantIdSidMap.containsKey(cid)) {
 			log.warn("Cannot update state for pool {} because it is not in the discovered pool list", cid);
 			throw new IllegalStateException("Pool is not discovered");
 		}
-		RequestBody body = RequestBody.create(TEMP_CL_PH_PAYLOAD, MediaType.parse("application/json"));
-		String u = getFastCgiPath(cid);
-		Request request = new Request.Builder().url(u).post(body).build();
-		Call call = okClient.newCall(request);
-		try (Response response = call.execute()) {
-
-			if (!response.isSuccessful() || response.body() == null) {
-				throw new IOException("State update failed with HTTP " + response.code());
-			}
-
-			String resp = response.body().string();
+        try {
+            String resp = readRegisters(cid, TEMP_CL_PH_PAYLOAD);
 
 			Matcher m = tempClPhPattern.matcher(resp);
 			if (m.find()) {
@@ -305,20 +308,17 @@ public class BayrolHttpConnector {
 				currentState.ph = parseAsDouble(m.group(1));
 				currentState.cl = parseAsDouble(m.group(2));
 				currentState.temp = parseAsDouble(m.group(3));
-				// Bayrol omits output indicators when they are requested with measurements.
-                String outputs = readOutputStates(cid, OUTPUT_STATUS_PAYLOAD);
-                currentState.lightState = extractLightState(outputs);
-                currentState.filterPumpState = extractFilterPumpState(outputs);
-                currentState.date = getCurrentIsoDate();
+				currentState.lightState = extractLightState(resp);
+                currentState.filterPumpState = extractFilterPumpState(resp);
 				log.info("Updated state for pool {}: temperature={}, chlorine={}, pH={}", cid, currentState.temp, currentState.cl, currentState.ph);
 				currentStates.put(cid, currentState);
 				return currentState;
 			} else {
-				log.error("Unable to parse state response for pool {} (HTTP {}, {} bytes)", cid, response.code(), resp.length());
+				log.error("Unable to parse state response for pool {} ({} bytes)", cid, resp.length());
 				reconnectAfterFailure();
 			}
 		} catch (Exception e) {
-			log.error("Unable to update state for pool {}", cid, e);
+			log.warn("Unable to update state for pool {}", cid);
 			reconnectAfterFailure();
 		}
 		throw new RuntimeException("current state not retrievable");
@@ -429,7 +429,7 @@ public class BayrolHttpConnector {
 		}
 	}
 
-	public void connectToWebPortal() {
+	public synchronized void connectToWebPortal() {
 		plantIdSidMap.clear();
 		getSessionID();
 		login();
