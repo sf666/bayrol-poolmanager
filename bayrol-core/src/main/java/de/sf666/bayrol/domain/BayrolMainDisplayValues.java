@@ -10,10 +10,11 @@ public class BayrolMainDisplayValues
     public double temp = 0;
     public double cl = 0;
     public String lightState = "";
+    public String filterPumpState = "";
 
     @Override
 	public String toString() {
-		return "BayrolMainDisplayValues [date=" + date + ", ph=" + ph + ", temp=" + temp + ", cl=" + cl + ", lightState=" + lightState +
+		return "BayrolMainDisplayValues [date=" + date + ", ph=" + ph + ", temp=" + temp + ", cl=" + cl + ", lightState=" + lightState + ", filterPumpState=" + filterPumpState +
 			"]";
 	}
 

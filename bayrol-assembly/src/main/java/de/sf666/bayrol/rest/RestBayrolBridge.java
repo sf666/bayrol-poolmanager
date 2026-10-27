@@ -16,6 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 import de.sf666.bayrol.bridge.BayrolBridge;
 import de.sf666.bayrol.domain.BayrolMainDisplayValues;
 import de.sf666.bayrol.domain.BayrolLightState;
+import de.sf666.bayrol.domain.BayrolFilterPumpState;
 import de.sf666.bayrol.export.ExportFactory;
 
 @CrossOrigin(origins = "http://localhost:4200", maxAge = 3600)
@@ -39,6 +40,16 @@ public class RestBayrolBridge {
 		}
 		return state.metricValue();
 	}
+
+    /** Read the actual output indicator live. This endpoint never switches the pump. */
+    @GetMapping("/filterPump/{cid}")
+    public String filterPumpStatus(@PathVariable("cid") String cid) {
+        BayrolFilterPumpState state = BayrolFilterPumpState.fromStatus(bayrolBridge.readFilterPumpState(cid));
+        if (state == BayrolFilterPumpState.UNKNOWN) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Filter pump state is unknown");
+        }
+        return state.metricValue();
+    }
 
 	@GetMapping("/setLight/{cid}/{on}")
 	public String lightOff(@PathVariable("cid") String cid, @PathVariable("on") String on) {

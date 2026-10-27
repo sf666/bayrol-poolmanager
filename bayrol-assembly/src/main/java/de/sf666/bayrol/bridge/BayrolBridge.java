@@ -83,6 +83,10 @@ public class BayrolBridge
     	bayrol.lightOff(cid);
     }
 
+    public String readFilterPumpState(String cid) {
+        return bayrol.readFilterPumpState(cid);
+    }
+
 	public String readLightState(String cid) {
 		return bayrol.readLightState(cid);
 	}

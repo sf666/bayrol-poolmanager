@@ -1,81 +1,164 @@
 # bayrol-poolmanager
-Rest Service on top of Bayrol Poolmanager Web-Portal
 
-Start service with login parameter like
+A Java REST bridge for the BAYROL PoolManager web portal. It discovers the pools
+available to your portal account, reads pH, chlorine and water temperature, and
+exposes the actual light and filter-pump indicators as JSON and Prometheus
+metrics. Pool lights can also be switched explicitly on or off.
 
-```
--u=PORTAL-USERNAME -p=PORTAL_PASSWORD
-```
+## Build and run
 
-Optional parameter are:
+Build with Maven and JDK 11 or later:
 
-
-```
--h PORT                          # Listen Port. Default : 32176
--s SCAN_INTERVAL                 # time between Bayrol Web-Service calls in milli seconds . Default : 120000           # (2 Minutes)
--l LOGFILE_LOCATION              # Location of logfile. Default : bayrol.log
--ll LOG_LEVEL                    # Available level are : FATAL, ERROR, WARN, INFO, DEBUG, TRACE, ALL". Default : INFO
+```sh
+mvn package
+java -jar bayrol-assembly/target/bayrolBridge.jar \
+  -u=PORTAL_USERNAME -p=PORTAL_PASSWORD
 ```
 
-Add your poolID to the request to collect values.
+The build runs unit tests for light and filter-pump status parsing, REST error
+handling, separate measurement/output requests, and Prometheus export. Tests do
+not connect to the portal or switch devices.
 
+| Option | Purpose | Default |
+| --- | --- | --- |
+| `-u`, `--user` | BAYROL portal username; required | — |
+| `-p`, `--pass` | BAYROL portal password; required | — |
+| `-h`, `--httpPort` | HTTP listening port | `32176` |
+| `-l`, `--logfile` | Log file location | `bayrol.log` |
+| `-ll`, `--logLevel` | `FATAL`, `ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE`, `ALL` | `INFO` |
+| `-s`, `--scheduler` | Parsed interval in milliseconds; currently not applied by the scheduler | `120000` |
 
+Background measurement polling currently runs every **120 seconds**, fixed in
+`BayrolBridge`. Changing `-s` does not change that interval. On portal failures,
+the connector attempts to reconnect. Cached data can remain older during an
+outage; a successful HTTP response from a cached endpoint does not imply a fresh
+portal reading.
+
+## REST API
+
+Replace `POOLID` with an ID returned by `/getPlantIds`. All routes below use GET.
+
+| Route | Result |
+| --- | --- |
+| `/Bayrol/getPlantIds` | IDs of pools discovered for the portal account |
+| `/Bayrol/currentState/POOLID` | Last successful measurement snapshot as JSON |
+| `/Bayrol/currentLiveState/POOLID` | Query the portal now and update the cached snapshot |
+| `/Bayrol/currentState/POOLID/prometheus` | Cached snapshot in Prometheus text format |
+| `/Bayrol/currentLiveState/POOLID/prometheus` | Fresh portal query in Prometheus text format |
+| `/Bayrol/light/POOLID` | Live light indicator: `1` = on, `0` = off |
+| `/Bayrol/filterPump/POOLID` | Live filter-pump indicator: `1` = running, `0` = off |
+| `/Bayrol/setLight/POOLID/1` | Send an explicit light ON command |
+| `/Bayrol/setLight/POOLID/0` | Send an explicit light OFF command |
+
+The dedicated `/light` and `/filterPump` endpoints query the portal directly;
+they do not return cached status. They return **HTTP 503** if the indicator is
+missing, unknown, or cannot be retrieved. An unavailable cached measurement
+snapshot also returns HTTP 503. A failed live measurement query returns an error
+rather than silently falling back to cached data.
+
+`/filterPump` is read-only. The bridge provides no pump-switching endpoint.
+`/setLight` sends a command and returns `on` or `off`; this acknowledgement is
+not confirmation of the actual light indicator or an independent physical
+measurement. Light commands are idempotent ON/OFF commands, not toggle impulses.
+
+Examples of read-only requests:
+
+```sh
+curl --fail http://localhost:32176/Bayrol/getPlantIds
+curl --fail http://localhost:32176/Bayrol/currentState/POOLID
+curl --fail http://localhost:32176/Bayrol/currentLiveState/POOLID
+curl --fail http://localhost:32176/Bayrol/light/POOLID
+curl --fail http://localhost:32176/Bayrol/filterPump/POOLID
 ```
-curl localhost:32176/Bayrol/currentState/POOLID
+
+## JSON snapshot and indicator meanings
+
+```json
+{
+  "date": "2026-10-27T11:00:00.000+01:00",
+  "ph": 7.25,
+  "temp": 12.6,
+  "cl": 0.08,
+  "lightState": "1",
+  "filterPumpState": "1"
+}
 ```
 
-To get live pool data call 
+`temp` is in °C; `cl` is in mg/l. `date` identifies the successful snapshot.
+Measurement values and output indicators are read in **separate portal
+requests**, because the portal omits output indicators when they are requested
+together with measurement registers. They therefore belong to the same polling
+cycle, but are not an atomic device sample.
 
+JSON preserves the portal's raw indicator values:
 
-```
-curl localhost:32176/Bayrol/currentLiveState/POOLID
-```
+| JSON field | Portal register | Raw `0` | Raw `1` | Other/missing value |
+| --- | --- | --- | --- | --- |
+| `lightState` | `55.17101.status` | On | Off | Unknown |
+| `filterPumpState` | `55.17106.status` | Running | Off | Unknown |
 
-Default return format is JSON.
+These raw values are **inverted** relative to the normalized REST and Prometheus
+values: raw `0` means on, whereas normalized `1` means on. Missing indicators are
+represented by an empty string; unrecognized values must also be treated as
+unknown.
 
-Output is
+The light operating-mode register `60.5433.value` is separate from the actual
+indicator. Existing light commands write mode `1` for ON and `4` for OFF. The
+filter pump's automatic/manual operating mode likewise does not establish
+whether it is running. Status readings reflect BAYROL's portal indicators;
+they are not independent sensors for physical light or water flow.
 
-```
-{"date":"2023-06-01T09:08:54.729+02:00","ph":7.26,"temp":34.3,"cl":0.66}
-```
+## Prometheus
 
+Both cached and live measurement endpoints support `/prometheus`:
 
-There is a prometheus exporer available. Append `/prometheus` to the request url.
-
-```
-curl localhost:32176/Bayrol/currentState/POOLID/prometheus
-curl localhost:32176/Bayrol/currentLiveState/POOLID/prometheus
-```
-
-Output is prefixed with `BAYROL_POOL_`:
-
-```
-BAYROL_POOL_TEMP{pool_id="POOL_ID"} 34.3
-BAYROL_POOL_CL{pool_id="POOL_ID"} 0.6
-BAYROL_POOL_PH{pool_id="POOL_ID"} 7.27
-```
-
-## Light state
-
-The measurement request also reads the actual home-screen light indicator
-`55.17101.status`. JSON `lightState` preserves that raw indicator: `0` means ON,
-`1` means OFF. Other indicator values or missing data are unknown, not OFF.
-The operating-mode register `60.5433.value` is a different value: it remains
-unchanged for the existing ON (`1`) and OFF (`4`) commands. `date` is the time
-of the successful measurement snapshot; `/currentState` can contain cached data.
-
-Prometheus adds:
-
-```
-BAYROL_POOL_LIGHT{pool_id="POOL_ID"} 0
-BAYROL_POOL_LIGHT_KNOWN{pool_id="POOL_ID"} 1
+```sh
+curl --fail http://localhost:32176/Bayrol/currentState/POOLID/prometheus
+curl --fail http://localhost:32176/Bayrol/currentLiveState/POOLID/prometheus
 ```
 
-`LIGHT` is `1` for ON, `0` for OFF, and `NaN` when unknown. `LIGHT_KNOWN` is then
-`1`, `1`, or `0`, respectively. A failed whole measurement request does not refresh
-the cached snapshot; consumers must also consider its age.
+Example for a snapshot with the light and filter pump off:
 
-`GET /Bayrol/light/POOLID` reads live and returns `1` or `0`; unavailable or
-unknown modes return HTTP 503. `GET /Bayrol/setLight/POOLID/1` and `/0` are explicit
-ON/OFF commands, not toggle impulses. A command response alone is not proof of
-the physical light state. Tests do not connect to the portal or actuate devices.
+```text
+BAYROL_POOL_TEMP{pool_id="POOLID"} 12.6
+BAYROL_POOL_CL{pool_id="POOLID"} 0.08
+BAYROL_POOL_PH{pool_id="POOLID"} 7.25
+BAYROL_POOL_LIGHT{pool_id="POOLID"} 0
+BAYROL_POOL_LIGHT_KNOWN{pool_id="POOLID"} 1
+BAYROL_POOL_FILTER_PUMP{pool_id="POOLID"} 0
+BAYROL_POOL_FILTER_PUMP_KNOWN{pool_id="POOLID"} 1
+BAYROL_POOL_SAMPLE_TIMESTAMP_SECONDS{pool_id="POOLID"} 1793095200.0
+```
+
+| Metric suffix | Meaning |
+| --- | --- |
+| `TEMP` | Water temperature in °C |
+| `CL` | Chlorine in mg/l |
+| `PH` | pH value |
+| `LIGHT` | `1` = on, `0` = off, `NaN` = unknown |
+| `LIGHT_KNOWN` | `1` if the snapshot contains a recognized light indicator; otherwise `0` |
+| `FILTER_PUMP` | `1` = running, `0` = off, `NaN` = unknown or stale |
+| `FILTER_PUMP_KNOWN` | `1` only for a recognized pump indicator in a fresh snapshot; otherwise `0` |
+| `SAMPLE_TIMESTAMP_SECONDS` | Snapshot time as Unix seconds; `NaN` for an invalid/missing date |
+
+Pump export becomes `NaN` / `KNOWN=0` when the snapshot is more than **300
+seconds old**, has an invalid date, or is more than 30 seconds in the future.
+This prevents a stale cached ON state from looking like current pump operation.
+The freshness limit is fixed; it does not change with polling configuration.
+The existing temperature, chlorine, pH and light metrics retain their cached
+values, so use the timestamp to assess their age as well.
+
+Example Prometheus scrape configuration; replace `POOLID` and the host:
+
+```yaml
+scrape_configs:
+  - job_name: bayrol
+    metrics_path: /Bayrol/currentState/POOLID/prometheus
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['BAYROL_BRIDGE_HOST:32176']
+```
+
+Scraping the cached endpoint every 30 seconds does not increase the portal's
+background polling rate. Use the live endpoint if each scrape must perform a
+new portal query.
